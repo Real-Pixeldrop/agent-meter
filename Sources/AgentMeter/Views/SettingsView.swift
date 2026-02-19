@@ -11,6 +11,7 @@ struct SettingsView: View {
         return .none
     }()
     @State private var customPlanCost: String = String(format: "%.0f", UserDefaults.standard.double(forKey: "customPlanCost"))
+    @State private var remoteURL: String = UserDefaults.standard.string(forKey: "remoteServerURL") ?? ""
     @State private var saved = false
 
     private var hasClawdbot: Bool {
@@ -56,6 +57,14 @@ struct SettingsView: View {
                             .frame(width: 80)
                     }
                 }
+            }
+
+            Section("Remote Server") {
+                TextField("Server URL (e.g. http://192.168.1.100:7890)", text: $remoteURL)
+                    .textFieldStyle(.roundedBorder)
+                Text("Connect to an AgentMeter server on another machine to view remote agent data.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
 
             Section("API Keys") {
@@ -116,6 +125,7 @@ struct SettingsView: View {
                     if let cost = Double(customPlanCost) {
                         UserDefaults.standard.set(cost, forKey: "customPlanCost")
                     }
+                    UserDefaults.standard.set(remoteURL, forKey: "remoteServerURL")
                     saved = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
                 }

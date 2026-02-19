@@ -12,12 +12,12 @@ struct MenuBarView: View {
                     .fontWeight(.bold)
 
                 if costTracker.hasClawdbot {
-                    Text("OpenClaw")
+                    Text(costTracker.isRemote ? "Remote" : "OpenClaw")
                         .font(.caption2)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Color.green.opacity(0.2))
-                        .foregroundColor(.green)
+                        .background(costTracker.isRemote ? Color.blue.opacity(0.2) : Color.green.opacity(0.2))
+                        .foregroundColor(costTracker.isRemote ? .blue : .green)
                         .cornerRadius(4)
                 }
 

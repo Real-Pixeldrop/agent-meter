@@ -15,22 +15,23 @@ class CostTracker: ObservableObject {
     @Published var hasClawdbot: Bool = false
     @Published var selectedPlan: AIPlan = .none
     @Published var planSavings: PlanSavings?
+    @Published var isRemote: Bool = false
 
     private let anthropic = AnthropicProvider()
     private let openRouter = OpenRouterProvider()
     private let openAI = OpenAIProvider()
+    private let remote = RemoteProvider()
 
     init() {
         budgetLimit = UserDefaults.standard.double(forKey: "budgetLimit")
         if budgetLimit == 0 { budgetLimit = 10.0 }
 
-        // Load saved plan
         if let planRaw = UserDefaults.standard.string(forKey: "selectedPlan"),
            let plan = AIPlan(rawValue: planRaw) {
             selectedPlan = plan
         }
 
-        // Detect Clawdbot
+        // Detect local Clawdbot
         let clawdbotPath = NSHomeDirectory() + "/.clawdbot/agents"
         hasClawdbot = FileManager.default.fileExists(atPath: clawdbotPath)
     }
@@ -42,15 +43,36 @@ class CostTracker: ObservableObject {
         do {
             var allRecords: [UsageRecord] = []
 
-            // Fetch Anthropic/Clawdbot usage
-            let anthropicRecords = try await anthropic.fetchUsage()
-            allRecords.append(contentsOf: anthropicRecords)
+            // Try remote server first if configured
+            let remoteConfigured = await remote.isConfigured
+            if remoteConfigured {
+                let remoteHealth = await remote.checkHealth()
+                if remoteHealth {
+                    let (remoteRecords, remoteHasClawdbot) = try await remote.fetchUsage()
+                    allRecords.append(contentsOf: remoteRecords)
+                    hasClawdbot = remoteHasClawdbot
+                    isRemote = true
+                }
+            }
 
-            // Fetch OpenAI usage
+            // If no remote data, use local sources
+            if allRecords.isEmpty {
+                isRemote = false
+
+                // Fetch Anthropic/Clawdbot usage (local)
+                let anthropicRecords = try await anthropic.fetchUsage()
+                allRecords.append(contentsOf: anthropicRecords)
+
+                // Detect local Clawdbot
+                let clawdbotPath = NSHomeDirectory() + "/.clawdbot/agents"
+                hasClawdbot = FileManager.default.fileExists(atPath: clawdbotPath)
+            }
+
+            // Fetch OpenAI usage (always from API)
             let openAIRecords = try await openAI.fetchUsage()
             allRecords.append(contentsOf: openAIRecords)
 
-            // Fetch OpenRouter usage
+            // Fetch OpenRouter usage (always from API)
             let openRouterUsage = try await openRouter.fetchUsage()
 
             // Calculate costs by timeframe
@@ -93,24 +115,20 @@ class CostTracker: ObservableObject {
             let openAITotal = todayRecords.filter { $0.provider == "OpenAI" }.reduce(0) { $0 + $1.cost }
 
             providers = [
-                ProviderUsage(name: "Anthropic", totalCost: anthropicTotal, remainingCredit: nil, agents: agentCosts.filter { agentCost in todayRecords.contains(where: { $0.agent == agentCost.name && $0.provider == "Anthropic" }) }),
+                ProviderUsage(name: "Anthropic", totalCost: anthropicTotal, remainingCredit: nil, agents: agentCosts),
                 ProviderUsage(name: "OpenAI", totalCost: openAITotal, remainingCredit: nil, agents: []),
                 openRouterUsage
             ].filter { $0.totalCost > 0 || $0.name == "Anthropic" }
 
             // Calculate plan savings
             if selectedPlan != .none {
-                planSavings = PlanSavings(
-                    planCost: selectedPlan.monthlyCost,
-                    theoreticalCost: monthCost
-                )
+                planSavings = PlanSavings(planCost: selectedPlan.monthlyCost, theoreticalCost: monthCost)
             } else {
                 planSavings = nil
             }
 
             lastRefresh = Date()
 
-            // Budget alert
             if todayCost >= budgetLimit && !budgetAlertShown {
                 budgetAlertShown = true
                 showBudgetAlert()

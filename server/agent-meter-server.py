@@ -11,14 +11,9 @@ from pathlib import Path
 AGENTS_DIR = os.path.expanduser("~/.clawdbot/agents")
 PORT = 7890
 
-AGENT_NAMES = {
-    "main": "Claudia",
-    "mike": "Mike",
-    "plaza-marketing": "Valentina",
-    "clea": "Clea",
-    "donald": "Donald",
-    "groupas": "GroupAs",
-}
+def auto_agent_name(folder_name):
+    """Auto-detect display name from folder name."""
+    return folder_name.replace("-", " ").title()
 
 
 def parse_sessions():
@@ -36,7 +31,7 @@ def parse_sessions():
         if not os.path.isdir(sessions_path):
             continue
 
-        display_name = AGENT_NAMES.get(agent_dir, agent_dir)
+        display_name = auto_agent_name(agent_dir)
 
         for session_file in glob.glob(os.path.join(sessions_path, "*.jsonl")):
             # Skip old files

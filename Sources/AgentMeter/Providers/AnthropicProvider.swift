@@ -15,15 +15,8 @@ actor AnthropicProvider {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: agentsDir) else { return [] }
 
-        // Map agent folder names to display names
-        let agentNames: [String: String] = [
-            "main": "Claudia",
-            "mike": "Mike",
-            "plaza-marketing": "Valentina",
-            "clea": "Clea",
-            "donald": "Donald",
-            "groupas": "GroupAs",
-        ]
+        // Auto-detect agent names from directory names (capitalize first letter)
+        // No hardcoded names - works for any Clawdbot installation
 
         let today = Calendar.current.startOfDay(for: Date())
         let weekStart = Calendar.current.date(from: Calendar.current.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
@@ -37,7 +30,7 @@ actor AnthropicProvider {
             guard fileManager.fileExists(atPath: sessionsPath) else { continue }
             guard let sessionFiles = try? fileManager.contentsOfDirectory(atPath: sessionsPath) else { continue }
 
-            let displayName = agentNames[agentDir] ?? agentDir
+            let displayName = agentDir.prefix(1).uppercased() + agentDir.dropFirst()
 
             for sessionFile in sessionFiles {
                 guard sessionFile.hasSuffix(".jsonl") else { continue }

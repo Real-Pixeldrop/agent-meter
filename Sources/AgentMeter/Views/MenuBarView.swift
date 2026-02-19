@@ -210,14 +210,9 @@ struct AgentRow: View {
     let agent: AgentCost
 
     var agentEmoji: String {
-        switch agent.name {
-        case "Claudia": return "🤖"
-        case "Mike": return "💪"
-        case "Valentina": return "💃"
-        case "Clea": return "🎨"
-        case "ChatGPT": return "🧠"
-        default: return "🔹"
-        }
+        let emojis = ["🤖", "🧠", "🎨", "💡", "⚡", "🔮", "🎯", "🚀"]
+        let index = abs(agent.name.hashValue) % emojis.count
+        return emojis[index]
     }
 
     var body: some View {

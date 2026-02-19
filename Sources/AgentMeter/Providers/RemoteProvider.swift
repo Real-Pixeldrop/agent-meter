@@ -58,6 +58,47 @@ actor RemoteProvider {
         return (records, hasClawdbot)
     }
 
+    func fetchSessions() async throws -> [SessionInfo] {
+        let url = serverURL
+        guard !url.isEmpty, let endpoint = URL(string: url + "/api/sessions") else { return [] }
+
+        var request = URLRequest(url: endpoint)
+        request.timeoutInterval = 10
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return [] }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let sessionsArray = json["sessions"] as? [[String: Any]] else { return [] }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        return sessionsArray.compactMap { item in
+            guard let id = item["id"] as? String,
+                  let agent = item["agent"] as? String,
+                  let model = item["model"] as? String,
+                  let contextTokens = item["contextTokens"] as? Int,
+                  let contextLimit = item["contextLimit"] as? Int else { return nil }
+
+            let lastTs = item["lastActivity"] as? String ?? ""
+            let lastActivity = formatter.date(from: lastTs) ?? Date()
+            let messageCount = item["messageCount"] as? Int ?? 0
+            let sessionCost = item["sessionCost"] as? Double ?? 0
+
+            return SessionInfo(
+                id: id,
+                agent: agent,
+                model: model,
+                contextTokens: contextTokens,
+                contextLimit: contextLimit,
+                lastActivity: lastActivity,
+                messageCount: messageCount,
+                sessionCost: sessionCost
+            )
+        }
+    }
+
     func checkHealth() async -> Bool {
         let url = serverURL
         guard !url.isEmpty, let endpoint = URL(string: url + "/api/health") else { return false }

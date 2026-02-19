@@ -129,7 +129,11 @@ class CostTracker: ObservableObject {
             }
 
             // Parse active sessions for context gauge
-            activeSessions = parseActiveSessions()
+            if isRemote {
+                activeSessions = (try? await remote.fetchSessions()) ?? []
+            } else {
+                activeSessions = parseActiveSessions()
+            }
 
             lastRefresh = Date()
 

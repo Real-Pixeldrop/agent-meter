@@ -19,6 +19,8 @@ struct SessionInfo: Identifiable {
     var isCritical: Bool { contextUsage > 0.90 }
 
     static func contextLimitForModel(_ model: String) -> Int {
+        // Opus 4.6 supports 1M tokens in beta
+        if model.contains("opus-4-6") || model.contains("opus-4.6") || model.contains("opus_4_6") { return 1_000_000 }
         if model.contains("opus") { return 200_000 }
         if model.contains("sonnet") { return 200_000 }
         if model.contains("haiku") { return 200_000 }

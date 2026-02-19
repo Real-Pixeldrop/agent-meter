@@ -1,101 +1,94 @@
 import Foundation
 
 actor AnthropicProvider {
-    private let baseURL = "https://api.anthropic.com/v1"
-
-    var apiKey: String? {
-        KeychainHelper.load(key: "anthropic_api_key")
-    }
 
     func fetchUsage() async throws -> [UsageRecord] {
-        guard let key = apiKey, !key.isEmpty else {
-            return []
-        }
-
-        // Anthropic admin API for usage
-        let today = ISO8601DateFormatter().string(from: Date()).prefix(10)
-        guard let url = URL(string: "\(baseURL)/messages/count_tokens") else {
-            return []
-        }
-
-        // For now, parse Clawdbot logs to get usage data
-        // Anthropic doesn't have a public usage API yet
-        // We'll read from local gateway logs
-        return try await parseClawdbotLogs()
+        // Parse Clawdbot session JSONL files for real usage data
+        return try await parseClawdbotSessions()
     }
 
-    private func parseClawdbotLogs() async throws -> [UsageRecord] {
+    private func parseClawdbotSessions() async throws -> [UsageRecord] {
         var records: [UsageRecord] = []
+        let homeDir = NSHomeDirectory()
+        let agentsDir = homeDir + "/.clawdbot/agents"
 
-        let logPath = NSHomeDirectory() + "/.clawdbot/logs/gateway.log"
-        guard FileManager.default.fileExists(atPath: logPath) else { return [] }
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: agentsDir) else { return [] }
 
-        guard let content = try? String(contentsOfFile: logPath, encoding: .utf8) else { return [] }
+        // Map agent folder names to display names
+        let agentNames: [String: String] = [
+            "main": "Claudia",
+            "mike": "Mike",
+            "plaza-marketing": "Valentina",
+            "clea": "Clea",
+            "donald": "Donald",
+            "groupas": "GroupAs",
+        ]
 
-        let lines = content.components(separatedBy: "\n")
-        let today = formatDate(Date())
+        let today = Calendar.current.startOfDay(for: Date())
+        let weekStart = Calendar.current.date(from: Calendar.current.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+        let monthStart = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: Date()))!
 
-        for line in lines.suffix(5000) {
-            // Parse lines with token usage info
-            guard line.contains(today),
-                  line.contains("tokens") || line.contains("usage") else { continue }
+        // Scan each agent directory
+        guard let agentDirs = try? fileManager.contentsOfDirectory(atPath: agentsDir) else { return [] }
 
-            // Extract agent name from log line
-            let agent = extractAgent(from: line)
-            let model = extractModel(from: line)
-            let (input, output) = extractTokens(from: line)
+        for agentDir in agentDirs {
+            let sessionsPath = agentsDir + "/" + agentDir + "/sessions"
+            guard fileManager.fileExists(atPath: sessionsPath) else { continue }
+            guard let sessionFiles = try? fileManager.contentsOfDirectory(atPath: sessionsPath) else { continue }
 
-            if input > 0 || output > 0 {
-                let cost = ModelPricing.costFor(model: model, inputTokens: input, outputTokens: output)
-                records.append(UsageRecord(
-                    provider: "Anthropic",
-                    agent: agent,
-                    model: model,
-                    inputTokens: input,
-                    outputTokens: output,
-                    cost: cost
-                ))
+            let displayName = agentNames[agentDir] ?? agentDir
+
+            for sessionFile in sessionFiles {
+                guard sessionFile.hasSuffix(".jsonl") else { continue }
+                let filePath = sessionsPath + "/" + sessionFile
+
+                // Only read files modified in the last 31 days
+                guard let attrs = try? fileManager.attributesOfItem(atPath: filePath),
+                      let modDate = attrs[.modificationDate] as? Date,
+                      modDate >= monthStart else { continue }
+
+                guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else { continue }
+
+                for line in content.components(separatedBy: "\n") {
+                    guard line.contains("\"usage\"") && line.contains("\"cost\"") else { continue }
+
+                    // Parse JSON
+                    guard let data = line.data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let message = json["message"] as? [String: Any],
+                          let usage = message["usage"] as? [String: Any],
+                          let costObj = usage["cost"] as? [String: Any],
+                          let totalCost = costObj["total"] as? Double,
+                          let timestampStr = json["timestamp"] as? String else { continue }
+
+                    // Parse timestamp
+                    let formatter = ISO8601DateFormatter()
+                    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                    guard let timestamp = formatter.date(from: timestampStr) else { continue }
+
+                    // Only include records from this month
+                    guard timestamp >= monthStart else { continue }
+
+                    let model = message["model"] as? String ?? "unknown"
+                    let inputTokens = usage["input"] as? Int ?? 0
+                    let outputTokens = usage["output"] as? Int ?? 0
+                    let cacheRead = usage["cacheRead"] as? Int ?? 0
+                    let cacheWrite = usage["cacheWrite"] as? Int ?? 0
+
+                    records.append(UsageRecord(
+                        provider: "Anthropic",
+                        agent: displayName,
+                        model: model,
+                        inputTokens: inputTokens + cacheRead + cacheWrite,
+                        outputTokens: outputTokens,
+                        cost: totalCost,
+                        timestamp: timestamp
+                    ))
+                }
             }
         }
 
         return records
-    }
-
-    private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
-    }
-
-    private func extractAgent(from line: String) -> String {
-        if line.contains("agents/main") { return "Claudia" }
-        if line.contains("agents/mike") { return "Mike" }
-        if line.contains("agents/plaza") { return "Valentina" }
-        if line.contains("agents/clea") { return "Clea" }
-        return "Unknown"
-    }
-
-    private func extractModel(from line: String) -> String {
-        let models = ["claude-opus-4-6", "claude-sonnet-4-20250514", "claude-3-5-haiku", "claude-3-5-sonnet"]
-        for model in models {
-            if line.contains(model) { return model }
-        }
-        return "claude-sonnet-4-20250514"
-    }
-
-    private func extractTokens(from line: String) -> (Int, Int) {
-        // Try to match patterns like "input_tokens":1234 or inputTokens: 1234
-        let inputPattern = try! NSRegularExpression(pattern: #"(?:input_tokens|inputTokens)[\"\s:]+(\d+)"#)
-        let outputPattern = try! NSRegularExpression(pattern: #"(?:output_tokens|outputTokens)[\"\s:]+(\d+)"#)
-
-        let nsString = line as NSString
-        
-        let inputMatch = inputPattern.firstMatch(in: line, options: [], range: NSRange(location: 0, length: nsString.length))
-        let outputMatch = outputPattern.firstMatch(in: line, options: [], range: NSRange(location: 0, length: nsString.length))
-        
-        let input = inputMatch?.range(at: 1).location != NSNotFound ? Int(nsString.substring(with: inputMatch!.range(at: 1))) ?? 0 : 0
-        let output = outputMatch?.range(at: 1).location != NSNotFound ? Int(nsString.substring(with: outputMatch!.range(at: 1))) ?? 0 : 0
-
-        return (input, output)
     }
 }

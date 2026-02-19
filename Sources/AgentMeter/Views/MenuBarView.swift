@@ -93,13 +93,7 @@ struct MenuBarView: View {
                 Spacer()
 
                 Button(action: {
-                    showSettings = true
-                    NSApp.activate(ignoringOtherApps: true)
-                    if #available(macOS 14.0, *) {
-                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                    } else {
-                        NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-                    }
+                    SettingsWindowController.shared.showSettings()
                 }) {
                     Label("Settings", systemImage: "gear")
                         .font(.caption)

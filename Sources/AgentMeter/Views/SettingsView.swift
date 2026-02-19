@@ -60,7 +60,7 @@ struct SettingsView: View {
             }
 
             Section("Remote Server") {
-                TextField("Server URL (e.g. http://192.168.1.100:7890)", text: $remoteURL)
+                TextField("Server URL (e.g. http://your-server:7890)", text: $remoteURL)
                     .textFieldStyle(.roundedBorder)
                 Text("Connect to an AgentMeter server on another machine to view remote agent data.")
                     .font(.caption)

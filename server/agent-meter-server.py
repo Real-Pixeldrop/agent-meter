@@ -156,8 +156,16 @@ def parse_active_sessions():
             except Exception:
                 continue
 
-    sessions.sort(key=lambda s: s["contextTokens"] / max(s["contextLimit"], 1), reverse=True)
-    return sessions[:8]
+    # Keep only the most recent session per agent
+    best_per_agent = {}
+    for s in sessions:
+        agent = s["agent"]
+        if agent not in best_per_agent or s["lastActivity"] > best_per_agent[agent]["lastActivity"]:
+            best_per_agent[agent] = s
+
+    result = list(best_per_agent.values())
+    result.sort(key=lambda s: s["contextTokens"] / max(s["contextLimit"], 1), reverse=True)
+    return result[:8]
 
 
 class Handler(BaseHTTPRequestHandler):

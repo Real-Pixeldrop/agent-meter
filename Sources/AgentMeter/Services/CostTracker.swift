@@ -240,8 +240,19 @@ class CostTracker: ObservableObject {
             }
         }
 
-        // Sort by context usage (most full first), limit to active ones
-        return sessions
+        // Keep only the most recent session per agent
+        var bestPerAgent: [String: SessionInfo] = [:]
+        for s in sessions {
+            if let existing = bestPerAgent[s.agent] {
+                if s.lastActivity > existing.lastActivity {
+                    bestPerAgent[s.agent] = s
+                }
+            } else {
+                bestPerAgent[s.agent] = s
+            }
+        }
+
+        return Array(bestPerAgent.values)
             .sorted { $0.contextUsage > $1.contextUsage }
             .prefix(8)
             .map { $0 }

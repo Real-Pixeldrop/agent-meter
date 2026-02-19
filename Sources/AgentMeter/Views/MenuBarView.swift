@@ -2,7 +2,6 @@ import SwiftUI
 
 struct MenuBarView: View {
     @ObservedObject var costTracker: CostTracker
-    @State private var showSettings = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -11,6 +10,17 @@ struct MenuBarView: View {
                 Text("AgentMeter")
                     .font(.headline)
                     .fontWeight(.bold)
+
+                if costTracker.hasClawdbot {
+                    Text("OpenClaw")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.green.opacity(0.2))
+                        .foregroundColor(.green)
+                        .cornerRadius(4)
+                }
+
                 Spacer()
                 if costTracker.isLoading {
                     ProgressView()
@@ -37,6 +47,60 @@ struct MenuBarView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+
+            // Plan Savings
+            if let savings = costTracker.planSavings {
+                Divider()
+                VStack(spacing: 6) {
+                    HStack {
+                        Text("YOUR PLAN")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text(costTracker.selectedPlan.displayName)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("You pay")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Text(String(format: "$%.0f/mo", savings.planCost))
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                        }
+                        Spacer()
+                        VStack(alignment: .center, spacing: 2) {
+                            Text("Value used")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Text(String(format: "%.0f€", savings.theoreticalCost))
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundColor(.orange)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("Savings")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Text(String(format: "%.0fx", savings.multiplier))
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundColor(.green)
+                        }
+                    }
+                    .padding(8)
+                    .background(Color.green.opacity(0.1))
+                    .cornerRadius(8)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+            }
 
             Divider()
 
@@ -151,6 +215,7 @@ struct AgentRow: View {
         case "Mike": return "💪"
         case "Valentina": return "💃"
         case "Clea": return "🎨"
+        case "ChatGPT": return "🧠"
         default: return "🔹"
         }
     }
@@ -185,10 +250,19 @@ struct AgentRow: View {
 struct ProviderRow: View {
     let provider: ProviderUsage
 
+    var providerColor: Color {
+        switch provider.name {
+        case "Anthropic": return .orange
+        case "OpenAI": return .cyan
+        case "OpenRouter": return .green
+        default: return .gray
+        }
+    }
+
     var body: some View {
         HStack {
             Circle()
-                .fill(provider.name == "Anthropic" ? Color.orange : Color.green)
+                .fill(providerColor)
                 .frame(width: 8, height: 8)
             Text(provider.name)
                 .font(.caption)

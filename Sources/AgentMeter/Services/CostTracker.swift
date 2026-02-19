@@ -8,19 +8,31 @@ class CostTracker: ObservableObject {
     @Published var monthCost: Double = 0
     @Published var agentCosts: [AgentCost] = []
     @Published var providers: [ProviderUsage] = []
-    @Published var dailyCosts: [DailyCost] = []
     @Published var isLoading: Bool = false
     @Published var lastRefresh: Date?
     @Published var budgetLimit: Double = 10.0
     @Published var budgetAlertShown: Bool = false
+    @Published var hasClawdbot: Bool = false
+    @Published var selectedPlan: AIPlan = .none
+    @Published var planSavings: PlanSavings?
 
     private let anthropic = AnthropicProvider()
     private let openRouter = OpenRouterProvider()
+    private let openAI = OpenAIProvider()
 
     init() {
-        // Load budget from UserDefaults
         budgetLimit = UserDefaults.standard.double(forKey: "budgetLimit")
         if budgetLimit == 0 { budgetLimit = 10.0 }
+
+        // Load saved plan
+        if let planRaw = UserDefaults.standard.string(forKey: "selectedPlan"),
+           let plan = AIPlan(rawValue: planRaw) {
+            selectedPlan = plan
+        }
+
+        // Detect Clawdbot
+        let clawdbotPath = NSHomeDirectory() + "/.clawdbot/agents"
+        hasClawdbot = FileManager.default.fileExists(atPath: clawdbotPath)
     }
 
     func refreshAll() async {
@@ -28,27 +40,32 @@ class CostTracker: ObservableObject {
         defer { isLoading = false }
 
         do {
-            // Fetch Anthropic usage from logs
+            var allRecords: [UsageRecord] = []
+
+            // Fetch Anthropic/Clawdbot usage
             let anthropicRecords = try await anthropic.fetchUsage()
+            allRecords.append(contentsOf: anthropicRecords)
+
+            // Fetch OpenAI usage
+            let openAIRecords = try await openAI.fetchUsage()
+            allRecords.append(contentsOf: openAIRecords)
 
             // Fetch OpenRouter usage
             let openRouterUsage = try await openRouter.fetchUsage()
 
-            // Calculate today's cost
+            // Calculate costs by timeframe
             let calendar = Calendar.current
             let now = Date()
-            let todayRecords = anthropicRecords.filter { calendar.isDateInToday($0.timestamp) }
 
+            let todayRecords = allRecords.filter { calendar.isDateInToday($0.timestamp) }
             todayCost = todayRecords.reduce(0) { $0 + $1.cost } + openRouterUsage.totalCost
 
-            // Calculate week cost
             let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
-            let weekRecords = anthropicRecords.filter { $0.timestamp >= weekStart }
+            let weekRecords = allRecords.filter { $0.timestamp >= weekStart }
             weekCost = weekRecords.reduce(0) { $0 + $1.cost } + openRouterUsage.totalCost
 
-            // Calculate month cost
             let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
-            let monthRecords = anthropicRecords.filter { $0.timestamp >= monthStart }
+            let monthRecords = allRecords.filter { $0.timestamp >= monthStart }
             monthCost = monthRecords.reduce(0) { $0 + $1.cost } + openRouterUsage.totalCost
 
             // Group by agent
@@ -71,17 +88,25 @@ class CostTracker: ObservableObject {
                 )
             }.sorted { $0.cost > $1.cost }
 
-            // Provider summary
-            let anthropicTotal = todayRecords.reduce(0) { $0 + $1.cost }
+            // Provider summaries
+            let anthropicTotal = todayRecords.filter { $0.provider == "Anthropic" }.reduce(0) { $0 + $1.cost }
+            let openAITotal = todayRecords.filter { $0.provider == "OpenAI" }.reduce(0) { $0 + $1.cost }
+
             providers = [
-                ProviderUsage(
-                    name: "Anthropic",
-                    totalCost: anthropicTotal,
-                    remainingCredit: nil,
-                    agents: agentCosts
-                ),
+                ProviderUsage(name: "Anthropic", totalCost: anthropicTotal, remainingCredit: nil, agents: agentCosts.filter { agentCost in todayRecords.contains(where: { $0.agent == agentCost.name && $0.provider == "Anthropic" }) }),
+                ProviderUsage(name: "OpenAI", totalCost: openAITotal, remainingCredit: nil, agents: []),
                 openRouterUsage
-            ]
+            ].filter { $0.totalCost > 0 || $0.name == "Anthropic" }
+
+            // Calculate plan savings
+            if selectedPlan != .none {
+                planSavings = PlanSavings(
+                    planCost: selectedPlan.monthlyCost,
+                    theoreticalCost: monthCost
+                )
+            } else {
+                planSavings = nil
+            }
 
             lastRefresh = Date()
 
@@ -100,6 +125,11 @@ class CostTracker: ObservableObject {
         budgetLimit = limit
         UserDefaults.standard.set(limit, forKey: "budgetLimit")
         budgetAlertShown = false
+    }
+
+    func setPlan(_ plan: AIPlan) {
+        selectedPlan = plan
+        UserDefaults.standard.set(plan.rawValue, forKey: "selectedPlan")
     }
 
     private func showBudgetAlert() {

@@ -126,6 +126,23 @@ struct MenuBarView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
 
+            // Active Sessions / Context Gauge
+            if !costTracker.activeSessions.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("SESSIONS")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+
+                    ForEach(costTracker.activeSessions) { session in
+                        SessionRow(session: session)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+
             Divider()
 
             // Providers
@@ -236,6 +253,86 @@ struct AgentRow: View {
 
     private func formatTokens(_ count: Int) -> String {
         if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
+        if count >= 1_000 { return String(format: "%.1fK", Double(count) / 1_000) }
+        return "\(count)"
+    }
+}
+
+// MARK: - Session Row
+struct SessionRow: View {
+    let session: SessionInfo
+
+    var gaugeColor: Color {
+        if session.isCritical { return .red }
+        if session.isNearCompaction { return .orange }
+        return .green
+    }
+
+    var statusLabel: String {
+        if session.isCritical { return "COMPACTION SOON" }
+        if session.isNearCompaction { return "Getting full" }
+        return ""
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(session.agent)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+                Text(shortModel(session.model))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text(String(format: "%.0f%%", session.contextUsage * 100))
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .foregroundColor(gaugeColor)
+            }
+
+            // Context gauge bar
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.gray.opacity(0.2))
+                        .frame(height: 6)
+
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(gaugeColor)
+                        .frame(width: geo.size.width * min(session.contextUsage, 1.0), height: 6)
+                }
+            }
+            .frame(height: 6)
+
+            HStack {
+                Text(formatTokens(session.contextTokens) + " / " + formatTokens(session.contextLimit))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Spacer()
+                if !statusLabel.isEmpty {
+                    Text(statusLabel)
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(gaugeColor)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func shortModel(_ model: String) -> String {
+        if model.contains("opus") { return "Opus" }
+        if model.contains("sonnet") { return "Sonnet" }
+        if model.contains("haiku") { return "Haiku" }
+        if model.contains("gpt-4o") { return "GPT-4o" }
+        if model.contains("gpt-4") { return "GPT-4" }
+        if model.contains("o1") { return "o1" }
+        if model.contains("o3") { return "o3" }
+        return String(model.prefix(12))
+    }
+
+    private func formatTokens(_ count: Int) -> String {
+        if count >= 1_000_000 { return String(format: "%.0fK", Double(count) / 1_000) }
         if count >= 1_000 { return String(format: "%.1fK", Double(count) / 1_000) }
         return "\(count)"
     }

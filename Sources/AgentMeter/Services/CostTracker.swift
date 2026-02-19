@@ -16,6 +16,7 @@ class CostTracker: ObservableObject {
     @Published var selectedPlan: AIPlan = .none
     @Published var planSavings: PlanSavings?
     @Published var isRemote: Bool = false
+    @Published var activeSessions: [SessionInfo] = []
 
     private let anthropic = AnthropicProvider()
     private let openRouter = OpenRouterProvider()
@@ -127,6 +128,9 @@ class CostTracker: ObservableObject {
                 planSavings = nil
             }
 
+            // Parse active sessions for context gauge
+            activeSessions = parseActiveSessions()
+
             lastRefresh = Date()
 
             if todayCost >= budgetLimit && !budgetAlertShown {
@@ -148,6 +152,95 @@ class CostTracker: ObservableObject {
     func setPlan(_ plan: AIPlan) {
         selectedPlan = plan
         UserDefaults.standard.set(plan.rawValue, forKey: "selectedPlan")
+    }
+
+    private func parseActiveSessions() -> [SessionInfo] {
+        var sessions: [SessionInfo] = []
+        let homeDir = NSHomeDirectory()
+        let agentsDir = homeDir + "/.clawdbot/agents"
+        let fileManager = FileManager.default
+
+        guard fileManager.fileExists(atPath: agentsDir),
+              let agentDirs = try? fileManager.contentsOfDirectory(atPath: agentsDir) else { return [] }
+
+        let cutoff = Date().addingTimeInterval(-24 * 3600) // Last 24h
+
+        for agentDir in agentDirs {
+            let sessionsPath = agentsDir + "/" + agentDir + "/sessions"
+            guard let sessionFiles = try? fileManager.contentsOfDirectory(atPath: sessionsPath) else { continue }
+
+            let displayName = agentDir.prefix(1).uppercased() + agentDir.dropFirst()
+
+            for sessionFile in sessionFiles {
+                guard sessionFile.hasSuffix(".jsonl") else { continue }
+                let filePath = sessionsPath + "/" + sessionFile
+
+                guard let attrs = try? fileManager.attributesOfItem(atPath: filePath),
+                      let modDate = attrs[.modificationDate] as? Date,
+                      modDate >= cutoff else { continue }
+
+                guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else { continue }
+                let lines = content.components(separatedBy: "\n").filter { !$0.isEmpty }
+
+                // Find the last message with usage info (read backwards)
+                var lastModel = "unknown"
+                var lastContextTokens = 0
+                var lastTimestamp = modDate
+                var msgCount = 0
+                var totalCost = 0.0
+
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+                for line in lines.reversed() {
+                    if line.contains("\"usage\"") && line.contains("\"cost\"") {
+                        guard let data = line.data(using: .utf8),
+                              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                              let message = json["message"] as? [String: Any],
+                              let usage = message["usage"] as? [String: Any],
+                              let costObj = usage["cost"] as? [String: Any] else { continue }
+
+                        let cost = costObj["total"] as? Double ?? 0
+                        totalCost += cost
+                        msgCount += 1
+
+                        // Only use the LAST message for context size
+                        if lastContextTokens == 0 {
+                            let input = usage["input"] as? Int ?? 0
+                            let cacheRead = usage["cacheRead"] as? Int ?? 0
+                            let cacheWrite = usage["cacheWrite"] as? Int ?? 0
+                            lastContextTokens = input + cacheRead + cacheWrite
+                            lastModel = message["model"] as? String ?? "unknown"
+                            if let ts = json["timestamp"] as? String {
+                                lastTimestamp = formatter.date(from: ts) ?? modDate
+                            }
+                        }
+                    }
+                }
+
+                guard lastContextTokens > 0 else { continue }
+
+                let sessionId = sessionFile.replacingOccurrences(of: ".jsonl", with: "")
+                let limit = SessionInfo.contextLimitForModel(lastModel)
+
+                sessions.append(SessionInfo(
+                    id: sessionId,
+                    agent: String(displayName),
+                    model: lastModel,
+                    contextTokens: lastContextTokens,
+                    contextLimit: limit,
+                    lastActivity: lastTimestamp,
+                    messageCount: msgCount,
+                    sessionCost: totalCost
+                ))
+            }
+        }
+
+        // Sort by context usage (most full first), limit to active ones
+        return sessions
+            .sorted { $0.contextUsage > $1.contextUsage }
+            .prefix(8)
+            .map { $0 }
     }
 
     private func showBudgetAlert() {

@@ -49,6 +49,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // Check for updates (background, non-blocking)
+        UpdateChecker.shared.checkForUpdates()
+
         // Initial fetch
         Task {
             await costTracker.refreshAll()

@@ -1,58 +1,35 @@
-# AgentMeter 📊
+# Agent Meter
 
-**Know what your AI agents actually cost you.**
+Suivez le coût réel de vos agents IA par projet et par client. Menu bar macOS.
 
-A tiny macOS menu bar app that tracks AI spending in real-time — per agent, per project, per client. Built for freelancers and agencies running multiple AI agents.
+## Download
 
-## Why
+[Télécharger AgentMeter.zip](https://github.com/Real-Pixeldrop/agent-meter/releases/latest/download/AgentMeter.zip)
 
-You're running AI agents (Claude, GPT, Gemini...) across multiple projects and clients. But you have no idea what each one costs until the invoice hits. AgentMeter fixes that.
+1. Télécharge le zip
+2. Dézipe
+3. Glisse dans Applications
+4. Double-clic. C'est prêt.
 
-## Features
+## Comment ça marche
 
-- 🎯 **Real-time cost tracking** in your menu bar
-- 🤖 **Per-agent breakdown** — see which agent burns the most tokens
-- 💼 **Per-client view** — know exactly what each client costs you in AI
-- 📈 **7-day graph** — spot trends before they become problems
-- ⚠️ **Budget alerts** — get notified when spending exceeds thresholds
-- 🔌 **Multi-provider** — Anthropic, OpenRouter, OpenAI, Google AI
+1. **Ajoute** tes providers IA (OpenAI, Anthropic, etc.)
+2. **Configure** tes projets et clients
+3. **Consulte** les coûts en temps réel depuis la menu bar
+4. **Analyse** les dépenses par agent, projet ou client
 
-## Supported Providers
-
-| Provider | Status |
-|----------|--------|
-| Anthropic (Claude) | ✅ |
-| OpenRouter | ✅ |
-| OpenAI | 🔜 |
-| Google AI (Gemini) | 🔜 |
-
-## Install
+## From source
 
 ```bash
-# Coming soon
-brew install --cask real-pixeldrop/tap/agent-meter
+git clone https://github.com/Real-Pixeldrop/agent-meter.git
+cd agent-meter
+swift build -c release
+cp -r .build/release/AgentMeter.app /Applications/ 2>/dev/null || \
+  cp .build/release/AgentMeter /Applications/
 ```
 
-## Screenshots
+## One-liner install
 
-*Coming soon*
-
-## How It Works
-
-AgentMeter reads usage data from your AI provider APIs and local agent logs. It aggregates costs by agent, project, and client — then displays it in a clean menu bar dropdown.
-
-No data leaves your machine. Everything runs locally.
-
-## Stack
-
-- Electron + React
-- Local SQLite for history
-- Provider APIs for usage data
-
-## License
-
-MIT
-
-## Author
-
-Built by [Mr Pixel](https://github.com/Real-Pixeldrop) @ [Pixel Drop](https://pixel-drop.com)
+```bash
+curl -sL https://github.com/Real-Pixeldrop/agent-meter/releases/latest/download/AgentMeter.zip -o /tmp/am.zip && unzip -o /tmp/am.zip -d /Applications/ && xattr -cr /Applications/AgentMeter.app && open /Applications/AgentMeter.app
+```

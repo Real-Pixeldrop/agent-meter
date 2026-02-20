@@ -15,7 +15,10 @@ let package = Package(
             dependencies: [
                 .product(name: "SQLite", package: "SQLite.swift"),
             ],
-            path: "Sources/AgentMeter"
+            path: "Sources/AgentMeter",
+            resources: [
+                .copy("Resources")
+            ]
         ),
     ]
 )

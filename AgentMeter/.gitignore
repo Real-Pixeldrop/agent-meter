@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+*.xcodeproj/
+DerivedData/
+AgentMeter.app/
+AgentMeter.zip
